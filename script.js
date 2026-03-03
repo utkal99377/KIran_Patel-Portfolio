@@ -84,9 +84,21 @@ function initParticles() {
     const canvas = document.getElementById('particles-canvas');
     if (!canvas) return;
     
+    // Mobile detection
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+    
+    // Skip particles on mobile devices for performance
+    if (isMobile || isTouchDevice) {
+        canvas.style.display = 'none';
+        return;
+    }
+    
     const ctx = canvas.getContext('2d');
     let particles = [];
     let animationId;
+    let lastTime = 0;
+    let animationFrameId;
     
     // Resize canvas
     function resizeCanvas() {
@@ -139,18 +151,23 @@ function initParticles() {
         }
     }
     
-    // Create particles
+    // Create particles with optimized count for performance
     function createParticles() {
         particles = [];
-        const particleCount = Math.min(100, (canvas.width * canvas.height) / 15000);
+        // Reduce particle count for better performance
+        const particleCount = Math.min(50, Math.floor((canvas.width * canvas.height) / 30000));
         
         for (let i = 0; i < particleCount; i++) {
             particles.push(new Particle());
         }
     }
     
-    // Draw connections
+    // Optimized connections drawing
     function drawConnections() {
+        // Only draw connections every other frame for performance
+        if (performance.now() - lastTime < 33) return;
+        lastTime = performance.now();
+        
         for (let i = 0; i < particles.length; i++) {
             for (let j = i + 1; j < particles.length; j++) {
                 const dx = particles[i].x - particles[j].x;
@@ -171,7 +188,7 @@ function initParticles() {
         }
     }
     
-    // Animation loop
+    // Optimized animation loop
     function animate() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         
@@ -184,16 +201,27 @@ function initParticles() {
         // Draw connections
         drawConnections();
         
-        animationId = requestAnimationFrame(animate);
+        animationFrameId = requestAnimationFrame(animate);
     }
     
     createParticles();
     animate();
     
-    // Recreate particles on resize
+    // Recreate particles on resize with debouncing
+    let resizeTimer;
     window.addEventListener('resize', () => {
-        createParticles();
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(() => {
+            createParticles();
+        }, 100);
     });
+    
+    // Cleanup function
+    return function cleanup() {
+        if (animationFrameId) {
+            cancelAnimationFrame(animationFrameId);
+        }
+    };
 }
 
 // ================================================
@@ -318,9 +346,12 @@ function initScrollAnimations() {
     
     if (revealElements.length === 0) return;
     
+    // Mobile detection for optimized scroll behavior
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    
     const observerOptions = {
-        threshold: 0.1,
-        rootMargin: '0px 0px -50px 0px'
+        threshold: isMobile ? 0.2 : 0.1, // Higher threshold on mobile for better reliability
+        rootMargin: isMobile ? '0px 0px -20px 0px' : '0px 0px -50px 0px'
     };
     
     const observer = new IntersectionObserver((entries) => {
@@ -339,10 +370,33 @@ function initScrollAnimations() {
         section.classList.add('reveal');
     });
     
-    // Trigger initial check
+    // Trigger initial check with longer delay on mobile
+    const delay = isMobile ? 200 : 100;
     setTimeout(() => {
         sections.forEach(section => observer.observe(section));
-    }, 100);
+    }, delay);
+    
+    // Fallback for mobile devices that might have scroll issues
+    if (isMobile) {
+        let ticking = false;
+        
+        window.addEventListener('scroll', () => {
+            if (!ticking) {
+                requestAnimationFrame(() => {
+                    revealElements.forEach(el => {
+                        const rect = el.getBoundingClientRect();
+                        const isVisible = rect.top < window.innerHeight - 50 && rect.bottom > 50;
+                        
+                        if (isVisible && !el.classList.contains('active')) {
+                            el.classList.add('active');
+                        }
+                    });
+                    ticking = false;
+                });
+                ticking = true;
+            }
+        });
+    }
 }
 
 // ================================================
@@ -385,6 +439,22 @@ function init3DTilt() {
     
     if (tiltElements.length === 0) return;
     
+    // Mobile detection
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+    
+    // Skip tilt effects on mobile devices for better touch experience
+    if (isMobile || isTouchDevice) {
+        // Add hover effects for touch devices instead
+        tiltElements.forEach(element => {
+            element.addEventListener('touchstart', handleTouchTilt);
+            element.addEventListener('touchend', resetTouchTilt);
+            element.addEventListener('touchcancel', resetTouchTilt);
+        });
+        return;
+    }
+    
+    // Desktop mouse-based tilt effects
     tiltElements.forEach(element => {
         element.addEventListener('mousemove', handle3DTilt);
         element.addEventListener('mouseleave', reset3DTilt);
@@ -420,6 +490,22 @@ function init3DTilt() {
         element.style.transform = 'perspective(1000px) rotateX(0deg) rotateY(0deg) scale3d(1, 1, 1)';
         element.style.boxShadow = '';
     }
+    
+    // Touch-based effects for mobile
+    function handleTouchTilt(e) {
+        const element = e.currentTarget;
+        element.style.transform = 'perspective(1000px) rotateX(5deg) rotateY(5deg) scale3d(1.02, 1.02, 1.02)';
+        element.style.boxShadow = `
+            -10px 10px 30px rgba(0, 212, 255, 0.2),
+            10px -10px 30px rgba(168, 85, 247, 0.2)
+        `;
+    }
+    
+    function resetTouchTilt(e) {
+        const element = e.currentTarget;
+        element.style.transform = 'perspective(1000px) rotateX(0deg) rotateY(0deg) scale3d(1, 1, 1)';
+        element.style.boxShadow = '';
+    }
 }
 
 // ================================================
@@ -444,6 +530,10 @@ if (downloadBtn) {
 // PERFORMANCE OPTIMIZATION
 // ================================================
 
+// Mobile detection
+const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+
 // Lazy load images
 const images = document.querySelectorAll('img[data-src]');
 if (images.length > 0) {
@@ -456,14 +546,60 @@ if (images.length > 0) {
                 imageObserver.unobserve(img);
             }
         });
+    }, {
+        threshold: isMobile ? 0.1 : 0.0,
+        rootMargin: isMobile ? '50px' : '100px'
     });
     
     images.forEach(img => imageObserver.observe(img));
 }
 
 // Reduce animations on mobile
-if (window.innerWidth < 768) {
+if (isMobile || isTouchDevice) {
     document.documentElement.style.setProperty('--transition-medium', '0.1s');
+    document.documentElement.style.setProperty('--transition-slow', '0.2s');
+    
+    // Disable heavy animations on mobile
+    const heavyAnimations = document.querySelectorAll('.floating-icons, .hero-bg-mesh');
+    heavyAnimations.forEach(el => {
+        if (el) {
+            el.style.animation = 'none';
+            el.style.transition = 'none';
+        }
+    });
+}
+
+// Optimize scroll performance on mobile
+if (isMobile) {
+    let scrollTimeout;
+    window.addEventListener('scroll', () => {
+        clearTimeout(scrollTimeout);
+        scrollTimeout = setTimeout(() => {
+            // Throttle scroll events for better performance
+            const navbar = document.querySelector('.navbar');
+            if (navbar) {
+                if (window.scrollY > 50) {
+                    navbar.classList.add('scrolled');
+                } else {
+                    navbar.classList.remove('scrolled');
+                }
+            }
+        }, 10);
+    }, { passive: true });
+}
+
+// Memory management for animations
+if (isMobile) {
+    // Reduce animation frequency
+    const originalRAF = window.requestAnimationFrame;
+    let rafCount = 0;
+    window.requestAnimationFrame = function(callback) {
+        rafCount++;
+        if (rafCount % 2 === 0) { // Skip every other frame on mobile
+            return originalRAF.call(window, callback);
+        }
+        return setTimeout(callback, 16);
+    };
 }
 
 // ================================================
